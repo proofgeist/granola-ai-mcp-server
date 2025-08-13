@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import zoneinfo
+import time
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -21,7 +23,7 @@ from .models import CacheData, MeetingMetadata, MeetingDocument, MeetingTranscri
 class GranolaMCPServer:
     """Granola MCP Server for meeting intelligence queries."""
     
-    def __init__(self, cache_path: Optional[str] = None):
+    def __init__(self, cache_path: Optional[str] = None, timezone: Optional[str] = None):
         """Initialize the Granola MCP server."""
         if cache_path is None:
             cache_path = os.path.expanduser("~/Library/Application Support/Granola/cache-v3.json")
@@ -29,7 +31,72 @@ class GranolaMCPServer:
         self.cache_path = cache_path
         self.server = Server("granola-mcp-server")
         self.cache_data: Optional[CacheData] = None
+        
+        # Set up timezone handling
+        if timezone:
+            self.local_timezone = zoneinfo.ZoneInfo(timezone)
+        else:
+            # Auto-detect local timezone
+            self.local_timezone = self._detect_local_timezone()
+            
         self._setup_handlers()
+    
+    def _detect_local_timezone(self):
+        """Detect the local timezone."""
+        try:
+            # Try to get system timezone
+            if hasattr(time, 'tzname') and time.tzname:
+                # Convert system timezone to zoneinfo
+                # Common mappings for US timezones
+                tz_mapping = {
+                    'EST': 'America/New_York',
+                    'EDT': 'America/New_York', 
+                    'CST': 'America/Chicago',
+                    'CDT': 'America/Chicago',
+                    'MST': 'America/Denver',
+                    'MDT': 'America/Denver',
+                    'PST': 'America/Los_Angeles',
+                    'PDT': 'America/Los_Angeles'
+                }
+                
+                current_tz = time.tzname[time.daylight]
+                if current_tz in tz_mapping:
+                    return zoneinfo.ZoneInfo(tz_mapping[current_tz])
+            
+            # Fallback: try to detect from system offset
+            local_offset = time.timezone if not time.daylight else time.altzone
+            hours_offset = -local_offset // 3600
+            
+            # Common US timezone mappings by offset
+            offset_mapping = {
+                -8: 'America/Los_Angeles',  # PST
+                -7: 'America/Denver',       # MST
+                -6: 'America/Chicago',      # CST
+                -5: 'America/New_York',     # EST
+                -4: 'America/New_York'      # EDT (during daylight saving)
+            }
+            
+            if hours_offset in offset_mapping:
+                return zoneinfo.ZoneInfo(offset_mapping[hours_offset])
+                
+        except Exception as e:
+            print(f"Error detecting timezone: {e}")
+        
+        # Ultimate fallback to Eastern Time (common for US business)
+        return zoneinfo.ZoneInfo('America/New_York')
+    
+    def _convert_to_local_time(self, utc_datetime: datetime) -> datetime:
+        """Convert UTC datetime to local timezone."""
+        if utc_datetime.tzinfo is None:
+            # Assume UTC if no timezone info
+            utc_datetime = utc_datetime.replace(tzinfo=zoneinfo.ZoneInfo('UTC'))
+        
+        return utc_datetime.astimezone(self.local_timezone)
+    
+    def _format_local_time(self, utc_datetime: datetime) -> str:
+        """Format datetime in local timezone for display."""
+        local_dt = self._convert_to_local_time(utc_datetime)
+        return local_dt.strftime('%Y-%m-%d %H:%M')
     
     def _setup_handlers(self):
         """Set up MCP protocol handlers."""
@@ -215,41 +282,56 @@ class GranolaMCPServer:
                 except Exception as e:
                     print(f"Error parsing meeting {meeting_id}: {e}")
         
-        # Parse Granola transcripts
+        # Parse Granola transcripts (list format)
         if "transcripts" in raw_data:
             for transcript_id, transcript_data in raw_data["transcripts"].items():
                 try:
-                    # Find corresponding meeting ID
-                    meeting_id = transcript_data.get("document_id") or transcript_id
+                    # Use transcript_id as meeting_id (they match in Granola)
+                    meeting_id = transcript_id
                     
                     # Extract transcript content and speakers
-                    content = ""
-                    speakers = []
+                    content_parts = []
+                    speakers_set = set()
                     
-                    if isinstance(transcript_data, dict):
-                        # Handle different transcript formats
+                    if isinstance(transcript_data, list):
+                        # Granola format: list of speech segments
+                        for segment in transcript_data:
+                            if isinstance(segment, dict) and "text" in segment:
+                                text = segment["text"].strip()
+                                if text:
+                                    content_parts.append(text)
+                                
+                                # Extract speaker info if available
+                                if "source" in segment:
+                                    speakers_set.add(segment["source"])
+                    
+                    elif isinstance(transcript_data, dict):
+                        # Fallback: dict format (legacy or different structure)
                         if "content" in transcript_data:
-                            content = transcript_data["content"]
+                            content_parts.append(transcript_data["content"])
                         elif "text" in transcript_data:
-                            content = transcript_data["text"]
+                            content_parts.append(transcript_data["text"])
                         elif "transcript" in transcript_data:
-                            content = transcript_data["transcript"]
+                            content_parts.append(transcript_data["transcript"])
                         
                         # Extract speakers if available
                         if "speakers" in transcript_data:
-                            speakers = transcript_data["speakers"]
-                        elif "people" in transcript_data:
-                            speakers = [person.get("name", "") for person in transcript_data["people"] if person.get("name")]
+                            speakers_set.update(transcript_data["speakers"])
                     
-                    if content:  # Only create transcript if we have content
+                    # Combine all content and create transcript
+                    if content_parts:
+                        full_content = " ".join(content_parts)
+                        speakers_list = list(speakers_set) if speakers_set else []
+                        
                         transcript = MeetingTranscript(
                             meeting_id=meeting_id,
-                            content=content,
-                            speakers=speakers,
-                            language=transcript_data.get("language"),
-                            confidence=transcript_data.get("confidence")
+                            content=full_content,
+                            speakers=speakers_list,
+                            language=None,  # Not typically stored in segment format
+                            confidence=None  # Would need to be calculated from segments
                         )
                         cache_data.transcripts[meeting_id] = transcript
+                        
                 except Exception as e:
                     print(f"Error parsing transcript {transcript_id}: {e}")
         
@@ -370,7 +452,7 @@ class GranolaMCPServer:
         
         for score, meeting in results:
             output_lines.append(f"• **{meeting.title}** ({meeting.id})")
-            output_lines.append(f"  Date: {meeting.date.strftime('%Y-%m-%d %H:%M')}")
+            output_lines.append(f"  Date: {self._format_local_time(meeting.date)}")
             if meeting.participants:
                 output_lines.append(f"  Participants: {', '.join(meeting.participants)}")
             output_lines.append("")
@@ -387,7 +469,7 @@ class GranolaMCPServer:
         details = [
             f"# Meeting Details: {meeting.title}\n",
             f"**ID:** {meeting.id}",
-            f"**Date:** {meeting.date.strftime('%Y-%m-%d %H:%M')}",
+            f"**Date:** {self._format_local_time(meeting.date)}",
         ]
         
         if meeting.duration:
@@ -459,7 +541,7 @@ class GranolaMCPServer:
         for doc in documents:
             output.append(f"## {doc.title}")
             output.append(f"**Type:** {doc.document_type}")
-            output.append(f"**Created:** {doc.created_at.strftime('%Y-%m-%d %H:%M')}")
+            output.append(f"**Created:** {self._format_local_time(doc.created_at)}")
             
             if doc.tags:
                 output.append(f"**Tags:** {', '.join(doc.tags)}")
