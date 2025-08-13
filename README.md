@@ -1,6 +1,6 @@
-# Granola MCP Server
+# Granola MCP Server (Experimental)
 
-A Model Context Protocol (MCP) server for integrating Granola.ai meeting intelligence with Claude Desktop.
+An experimental Model Context Protocol (MCP) server for integrating Granola.ai meeting intelligence with Claude Desktop. This uses Granola's local cache. I don't have any idea how Granola updates or maintains that cache. My guess is that it's doing a rolling context window, but storing long term notes up in AWS. So, YMMV. Use at your own risk. I will likely add a cache shipper at some point since we don't have access to Gronala's data in the cloud.
 
 ## Features
 
