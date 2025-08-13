@@ -10,32 +10,49 @@ A Model Context Protocol (MCP) server for integrating Granola.ai meeting intelli
 - **Document Management**: Access meeting-related documents
 - **Pattern Analysis**: Analyze patterns across meetings (participants, frequency, topics)
 
-## Installation
+## Quick Start
 
-1. Install dependencies:
+### Prerequisites
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager
+- macOS with Granola.ai installed
+- Claude Desktop application
+- Granola cache file at `~/Library/Application Support/Granola/cache-v3.json`
+
+### Installation
+
+1. **Clone and navigate to the project:**
    ```bash
-   pip install -e .
+   git clone <repository-url>
+   cd granola-ai-mcp
    ```
 
-2. Configure Claude Desktop by adding to your `claude_desktop_config.json`:
+2. **Install dependencies with uv:**
+   ```bash
+   uv sync
+   ```
+
+3. **Test the installation:**
+   ```bash
+   uv run python test_server.py
+   ```
+
+4. **Configure Claude Desktop** by adding to your `claude_desktop_config.json`:
    ```json
    {
      "mcpServers": {
        "granola": {
          "command": "uv",
-         "args": ["--directory", "/path/to/granola-ai-mcp", "run", "granola-mcp-server"],
+         "args": ["--directory", "/absolute/path/to/granola-ai-mcp", "run", "granola-mcp-server"],
          "env": {}
        }
      }
    }
    ```
+   
+   **Important:** Replace `/absolute/path/to/granola-ai-mcp` with your actual project path.
 
-## Requirements
-
-- Python 3.12+
-- macOS with Granola.ai installed
-- Claude Desktop application
-- Granola cache file at `~/Library/Application Support/Granola/cache-v3.json`
+5. **Restart Claude Desktop** to load the MCP server
 
 ## Available Tools
 
@@ -76,7 +93,7 @@ Parameters:
 - date_range (object, optional): Date range for analysis with start_date and end_date
 ```
 
-## Usage
+## Usage Examples
 
 Once configured with Claude Desktop, you can use natural language to interact with your Granola meetings:
 
@@ -86,16 +103,66 @@ Once configured with Claude Desktop, you can use natural language to interact wi
 - "Analyze participant patterns from last month"
 - "What documents are associated with the product review meeting?"
 
-## Security
+## Development
 
-- All data processing happens locally
-- No external API calls are made
-- Respects existing Granola.ai permissions
-- Cache data is parsed from local Granola installation
+### Running Tests
+```bash
+uv run python test_server.py
+```
+
+### Running the Server Directly
+```bash
+uv run granola-mcp-server
+```
+
+### Adding Dependencies
+```bash
+uv add package-name
+```
+
+## Configuration
+
+### Claude Desktop Config Locations
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`  
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+### Granola Cache Location
+The server reads from Granola's cache file at:
+```
+~/Library/Application Support/Granola/cache-v3.json
+```
+
+## Security & Privacy
+
+- ✅ **100% Local Processing** - All data stays on your machine
+- ✅ **No External API Calls** - No data sent to external services
+- ✅ **Granola Permissions Respected** - Uses existing Granola.ai access controls
+- ✅ **Read-Only Access** - Server only reads from Granola's cache
 
 ## Performance
 
-- Lazy loading of transcript data
-- Indexed meeting search capabilities  
-- Sub-2 second cache loading for hundreds of meetings
-- Efficient pattern analysis across large datasets
+- **Fast Loading**: Sub-2 second cache loading for hundreds of meetings
+- **Efficient Search**: Multi-field search with relevance scoring
+- **Memory Optimized**: Lazy loading of transcript data
+- **Scalable**: Handles large datasets with efficient pattern analysis
+
+## Troubleshooting
+
+### Common Issues
+
+**"Cache file not found"**
+- Ensure Granola.ai is installed and has processed some meetings
+- Check that the cache file exists: `ls -la "~/Library/Application Support/Granola/cache-v3.json"`
+
+**"uv command not found"**
+- Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Or use pip fallback in Claude config: `"command": "python"`
+
+**"Permission denied"**
+- Ensure the cache file is readable: `chmod 644 "~/Library/Application Support/Granola/cache-v3.json"`
+
+**Server not appearing in Claude Desktop**
+- Verify the absolute path in your Claude config
+- Check Claude Desktop logs for MCP server errors
+- Restart Claude Desktop after config changes

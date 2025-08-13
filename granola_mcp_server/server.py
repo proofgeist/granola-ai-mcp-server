@@ -164,6 +164,15 @@ class GranolaMCPServer:
             with open(cache_path, 'r', encoding='utf-8') as f:
                 raw_data = json.load(f)
             
+            # Handle Granola's nested cache structure
+            if 'cache' in raw_data and isinstance(raw_data['cache'], str):
+                # Cache data is stored as a JSON string inside the 'cache' key
+                actual_data = json.loads(raw_data['cache'])
+                if 'state' in actual_data:
+                    raw_data = actual_data['state']
+                else:
+                    raw_data = actual_data
+            
             self.cache_data = await self._parse_cache_data(raw_data)
             
         except Exception as e:
@@ -174,54 +183,91 @@ class GranolaMCPServer:
         """Parse raw cache data into structured models."""
         cache_data = CacheData()
         
-        # Parse meetings metadata
-        if "meetings" in raw_data:
-            for meeting_id, meeting_data in raw_data["meetings"].items():
+        # Parse Granola documents (which are meetings)
+        if "documents" in raw_data:
+            for meeting_id, meeting_data in raw_data["documents"].items():
                 try:
+                    # Extract participants from people array
+                    participants = []
+                    if "people" in meeting_data and isinstance(meeting_data["people"], list):
+                        participants = [person.get("name", "") for person in meeting_data["people"] if person.get("name")]
+                    
+                    # Parse creation date
+                    created_at = meeting_data.get("created_at")
+                    if created_at:
+                        # Handle Granola's ISO format
+                        if created_at.endswith('Z'):
+                            created_at = created_at[:-1] + '+00:00'
+                        meeting_date = datetime.fromisoformat(created_at)
+                    else:
+                        meeting_date = datetime.now()
+                    
                     metadata = MeetingMetadata(
                         id=meeting_id,
                         title=meeting_data.get("title", "Untitled Meeting"),
-                        date=datetime.fromisoformat(meeting_data.get("date", datetime.now().isoformat())),
-                        duration=meeting_data.get("duration"),
-                        participants=meeting_data.get("participants", []),
-                        meeting_type=meeting_data.get("type"),
-                        platform=meeting_data.get("platform")
+                        date=meeting_date,
+                        duration=None,  # Granola doesn't store duration in this format
+                        participants=participants,
+                        meeting_type=meeting_data.get("type", "meeting"),
+                        platform=None  # Not stored in Granola cache
                     )
                     cache_data.meetings[meeting_id] = metadata
                 except Exception as e:
                     print(f"Error parsing meeting {meeting_id}: {e}")
         
-        # Parse documents
-        if "documents" in raw_data:
-            for doc_id, doc_data in raw_data["documents"].items():
-                try:
-                    document = MeetingDocument(
-                        id=doc_id,
-                        meeting_id=doc_data.get("meeting_id", ""),
-                        title=doc_data.get("title", "Untitled Document"),
-                        content=doc_data.get("content", ""),
-                        document_type=doc_data.get("type", "unknown"),
-                        created_at=datetime.fromisoformat(doc_data.get("created_at", datetime.now().isoformat())),
-                        tags=doc_data.get("tags", [])
-                    )
-                    cache_data.documents[doc_id] = document
-                except Exception as e:
-                    print(f"Error parsing document {doc_id}: {e}")
-        
-        # Parse transcripts  
+        # Parse Granola transcripts
         if "transcripts" in raw_data:
-            for meeting_id, transcript_data in raw_data["transcripts"].items():
+            for transcript_id, transcript_data in raw_data["transcripts"].items():
                 try:
-                    transcript = MeetingTranscript(
-                        meeting_id=meeting_id,
-                        content=transcript_data.get("content", ""),
-                        speakers=transcript_data.get("speakers", []),
-                        language=transcript_data.get("language"),
-                        confidence=transcript_data.get("confidence")
-                    )
-                    cache_data.transcripts[meeting_id] = transcript
+                    # Find corresponding meeting ID
+                    meeting_id = transcript_data.get("document_id") or transcript_id
+                    
+                    # Extract transcript content and speakers
+                    content = ""
+                    speakers = []
+                    
+                    if isinstance(transcript_data, dict):
+                        # Handle different transcript formats
+                        if "content" in transcript_data:
+                            content = transcript_data["content"]
+                        elif "text" in transcript_data:
+                            content = transcript_data["text"]
+                        elif "transcript" in transcript_data:
+                            content = transcript_data["transcript"]
+                        
+                        # Extract speakers if available
+                        if "speakers" in transcript_data:
+                            speakers = transcript_data["speakers"]
+                        elif "people" in transcript_data:
+                            speakers = [person.get("name", "") for person in transcript_data["people"] if person.get("name")]
+                    
+                    if content:  # Only create transcript if we have content
+                        transcript = MeetingTranscript(
+                            meeting_id=meeting_id,
+                            content=content,
+                            speakers=speakers,
+                            language=transcript_data.get("language"),
+                            confidence=transcript_data.get("confidence")
+                        )
+                        cache_data.transcripts[meeting_id] = transcript
                 except Exception as e:
-                    print(f"Error parsing transcript for meeting {meeting_id}: {e}")
+                    print(f"Error parsing transcript {transcript_id}: {e}")
+        
+        # Create document entries from meetings (for compatibility)
+        for meeting_id, meeting in cache_data.meetings.items():
+            try:
+                document = MeetingDocument(
+                    id=meeting_id,
+                    meeting_id=meeting_id,
+                    title=meeting.title,
+                    content="",  # Content would need to be extracted from transcript
+                    document_type="meeting_notes",
+                    created_at=meeting.date,
+                    tags=[]
+                )
+                cache_data.documents[meeting_id] = document
+            except Exception as e:
+                print(f"Error creating document for meeting {meeting_id}: {e}")
         
         cache_data.last_updated = datetime.now()
         return cache_data
@@ -467,14 +513,27 @@ class GranolaMCPServer:
         """Run the server."""
         import asyncio
         from mcp.server.stdio import stdio_server
-        from mcp.server.sse import sse_server
+        from mcp.types import ServerCapabilities
         
         if transport_type == "stdio":
-            return asyncio.run(stdio_server(self.server))
-        elif transport_type == "sse":
-            return asyncio.run(sse_server(self.server))
+            async def main():
+                # Set up server capabilities for tool support
+                capabilities = ServerCapabilities(
+                    tools={}  # Empty dict indicates tool support is available
+                )
+                
+                options = InitializationOptions(
+                    server_name="granola-mcp-server",
+                    server_version="0.1.0",
+                    capabilities=capabilities
+                )
+                
+                async with stdio_server() as (read_stream, write_stream):
+                    await self.server.run(read_stream, write_stream, options)
+            
+            return asyncio.run(main())
         else:
-            raise ValueError(f"Unsupported transport type: {transport_type}")
+            raise ValueError(f"Unsupported transport type: {transport_type}. Only 'stdio' is supported.")
 
 
 def main():
