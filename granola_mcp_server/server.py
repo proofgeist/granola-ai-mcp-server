@@ -253,24 +253,82 @@ class GranolaMCPServer:
                 except Exception as e:
                     print(f"Error parsing transcript {transcript_id}: {e}")
         
-        # Create document entries from meetings (for compatibility)
-        for meeting_id, meeting in cache_data.meetings.items():
-            try:
-                document = MeetingDocument(
-                    id=meeting_id,
-                    meeting_id=meeting_id,
-                    title=meeting.title,
-                    content="",  # Content would need to be extracted from transcript
-                    document_type="meeting_notes",
-                    created_at=meeting.date,
-                    tags=[]
-                )
-                cache_data.documents[meeting_id] = document
-            except Exception as e:
-                print(f"Error creating document for meeting {meeting_id}: {e}")
+        # Extract document content from Granola documents
+        if "documents" in raw_data:
+            for doc_id, doc_data in raw_data["documents"].items():
+                try:
+                    # Extract content from various Granola fields
+                    content_parts = []
+                    
+                    # Try notes_plain first (cleanest format)
+                    if doc_data.get("notes_plain"):
+                        content_parts.append(doc_data["notes_plain"])
+                    
+                    # Try notes_markdown as backup
+                    elif doc_data.get("notes_markdown"):
+                        content_parts.append(doc_data["notes_markdown"])
+                    
+                    # Try to extract from structured notes field
+                    elif doc_data.get("notes") and isinstance(doc_data["notes"], dict):
+                        notes_content = self._extract_structured_notes(doc_data["notes"])
+                        if notes_content:
+                            content_parts.append(notes_content)
+                    
+                    # Add overview if available
+                    if doc_data.get("overview"):
+                        content_parts.append(f"Overview: {doc_data['overview']}")
+                    
+                    # Add summary if available  
+                    if doc_data.get("summary"):
+                        content_parts.append(f"Summary: {doc_data['summary']}")
+                    
+                    content = "\n\n".join(content_parts)
+                    
+                    # Only create document if we have a meeting for it
+                    if doc_id in cache_data.meetings:
+                        meeting = cache_data.meetings[doc_id]
+                        document = MeetingDocument(
+                            id=doc_id,
+                            meeting_id=doc_id,
+                            title=meeting.title,
+                            content=content,
+                            document_type="meeting_notes",
+                            created_at=meeting.date,
+                            tags=[]
+                        )
+                        cache_data.documents[doc_id] = document
+                        
+                except Exception as e:
+                    print(f"Error extracting document content for {doc_id}: {e}")
         
         cache_data.last_updated = datetime.now()
         return cache_data
+    
+    def _extract_structured_notes(self, notes_data: Dict[str, Any]) -> str:
+        """Extract text content from Granola's structured notes format."""
+        try:
+            if not isinstance(notes_data, dict) or 'content' not in notes_data:
+                return ""
+            
+            def extract_text_from_content(content_list):
+                text_parts = []
+                if isinstance(content_list, list):
+                    for item in content_list:
+                        if isinstance(item, dict):
+                            # Handle different content types
+                            if item.get('type') == 'paragraph' and 'content' in item:
+                                text_parts.append(extract_text_from_content(item['content']))
+                            elif item.get('type') == 'text' and 'text' in item:
+                                text_parts.append(item['text'])
+                            elif 'content' in item:
+                                text_parts.append(extract_text_from_content(item['content']))
+                return ' '.join(text_parts)
+            
+            return extract_text_from_content(notes_data['content'])
+            
+        except Exception as e:
+            print(f"Error extracting structured notes: {e}")
+            return ""
     
     async def _search_meetings(self, query: str, limit: int = 10) -> List[TextContent]:
         """Search meetings by query."""
