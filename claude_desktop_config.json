@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "granola": {
+      "command": "uv",
+      "args": ["--directory", "/Users/ernestkoe/Projects/granola-ai-mcp", "run", "granola-mcp-server"],
+      "env": {}
+    }
+  }
+}
