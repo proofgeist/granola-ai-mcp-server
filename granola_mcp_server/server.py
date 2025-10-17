@@ -336,6 +336,9 @@ class GranolaMCPServer:
                     print(f"Error parsing transcript {transcript_id}: {e}")
         
         # Extract document content from Granola documents
+        document_panels = raw_data.get("documentPanels", {})
+        parse_panels = os.getenv("GRANOLA_PARSE_PANELS", "1") != "0"
+
         if "documents" in raw_data:
             for doc_id, doc_data in raw_data["documents"].items():
                 try:
@@ -356,6 +359,12 @@ class GranolaMCPServer:
                         if notes_content:
                             content_parts.append(notes_content)
                     
+                    # Fallback to document panels when traditional fields are empty
+                    if parse_panels and not any(isinstance(part, str) and part.strip() for part in content_parts):
+                        panel_text = self._extract_document_panel_content(document_panels.get(doc_id))
+                        if panel_text:
+                            content_parts.append(panel_text)
+
                     # Add overview if available
                     if doc_data.get("overview"):
                         content_parts.append(f"Overview: {doc_data['overview']}")
@@ -411,6 +420,42 @@ class GranolaMCPServer:
         except Exception as e:
             print(f"Error extracting structured notes: {e}")
             return ""
+
+    def _extract_document_panel_content(self, panel_data: Any) -> str:
+        """Extract text content from Granola's documentPanels structure."""
+        if not panel_data:
+            return ""
+
+        text_parts = []
+
+        def extract_from_node(node: Any):
+            if isinstance(node, dict):
+                node_type = node.get('type')
+
+                if node_type == 'text' and node.get('text'):
+                    text_parts.append(node['text'])
+                elif 'content' in node:
+                    extract_from_node(node['content'])
+            elif isinstance(node, list):
+                for item in node:
+                    extract_from_node(item)
+
+        try:
+            if isinstance(panel_data, dict):
+                # Panels keyed by UUID -> {content: [...]} structure
+                for panel_id in sorted(panel_data.keys()):
+                    panel = panel_data.get(panel_id)
+                    if isinstance(panel, dict):
+                        extract_from_node(panel.get('content'))
+            elif isinstance(panel_data, list):
+                for panel in panel_data:
+                    extract_from_node(panel)
+
+        except Exception as exc:
+            print(f"Error extracting panel content: {exc}")
+
+        combined = '\n\n'.join(part.strip() for part in text_parts if isinstance(part, str) and part.strip())
+        return combined.strip()
     
     async def _search_meetings(self, query: str, limit: int = 10) -> List[TextContent]:
         """Search meetings by query."""

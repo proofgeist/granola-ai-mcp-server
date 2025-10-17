@@ -2,9 +2,9 @@
 """Test script that uses the actual Granola cache file."""
 
 import asyncio
+import json
 import os
 from pathlib import Path
-import json
 
 from granola_mcp_server.server import GranolaMCPServer
 
@@ -58,7 +58,7 @@ async def test_real_cache():
         
         print(f"✅ Successfully loaded real cache data:")
         print(f"   📅 {meeting_count} meetings")
-        print(f"   📄 {doc_count} documents") 
+        print(f"   📄 {doc_count} documents")
         print(f"   🗣️ {transcript_count} transcripts")
         
         if meeting_count == 0:
@@ -102,6 +102,49 @@ async def test_real_cache():
                 transcript = await server._get_meeting_transcript(first_meeting_id)
                 print("Transcript preview:", transcript[0].text[:200] + "..." if transcript[0].text else "No transcript")
         
+        # Validate document panel content when present
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as cache_file:
+                cache_json = json.load(cache_file)
+            state = json.loads(cache_json.get('cache', '{}')).get('state', {})
+        except Exception as exc:
+            print(f"\n⚠️ Unable to parse raw cache for panel validation: {exc}")
+            state = {}
+
+        panels = state.get('documentPanels', {})
+        meetings_meta = state.get('meetingsMetadata', {})
+
+        checked = skipped = failures = 0
+        recent_meetings = sorted(
+            meetings_meta.items(),
+            key=lambda item: item[1].get('created_at', ''),
+            reverse=True
+        )[:10]
+
+        for meeting_id, _meta in recent_meetings:
+            panel_data = panels.get(meeting_id)
+            if not panel_data:
+                skipped += 1
+                continue
+
+            if meeting_id not in server.cache_data.documents:
+                skipped += 1
+                continue
+
+            docs = await server._get_meeting_documents(meeting_id)
+            document_text = docs[0].text if docs else ''
+
+            if document_text and document_text.strip():
+                checked += 1
+            else:
+                print(f"\n❌ Panel-backed meeting '{meeting_id}' produced empty document content")
+                failures += 1
+
+        print(f"\n📄 Panel validation summary: checked={checked}, skipped={skipped}, failures={failures}")
+
+        if failures:
+            raise AssertionError("Some meetings with document panels yielded empty content")
+
         # Test pattern analysis
         print(f"\n📊 Testing participant pattern analysis...")
         patterns = await server._analyze_meeting_patterns("participants")
