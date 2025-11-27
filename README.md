@@ -197,3 +197,8 @@ The server reads from Granola's cache file at:
 - Verify the absolute path in your Claude config
 - Check Claude Desktop logs for MCP server errors
 - Restart Claude Desktop after config changes
+
+### Meeting notes appear empty in Claude
+- Granola sometimes stores rich notes inside `documentPanels` rather than `notes_plain`
+- This server now reads those panels by default; set `GRANOLA_PARSE_PANELS=0` in the environment to disable
+- Run `python test_real_cache.py` to verify that panel-backed notes produce content

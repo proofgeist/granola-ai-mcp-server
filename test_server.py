@@ -1,107 +1,121 @@
 #!/usr/bin/env python3
-"""Test script for Granola MCP Server."""
+"""Enhanced test script for Granola MCP Server."""
 
 import asyncio
 import json
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 from granola_mcp_server.server import GranolaMCPServer
 
 
-async def create_test_cache():
-    """Create a test cache file."""
-    test_data = {
-        "meetings": {
-            "meeting_1": {
-                "title": "Weekly Team Standup",
-                "date": "2024-01-15T10:00:00",
-                "duration": 30,
-                "participants": ["Alice", "Bob", "Charlie"],
-                "type": "standup",
-                "platform": "Zoom"
+async def create_test_cache_with_panels():
+    """Create a synthetic cache that exercises panel parsing."""
+    state = {
+        "meetingsMetadata": {
+            "m1": {
+                "created_at": "2024-01-15T10:00:00",
+                "title": "Service Review"
             },
-            "meeting_2": {
-                "title": "Q1 Planning Session",
-                "date": "2024-01-20T14:00:00", 
-                "duration": 120,
-                "participants": ["Alice", "David", "Eve"],
-                "type": "planning",
-                "platform": "Google Meet"
+            "m2": {
+                "created_at": "2024-01-16T11:00:00",
+                "title": "Retro"
             }
         },
         "documents": {
-            "doc_1": {
-                "meeting_id": "meeting_1",
-                "title": "Sprint Goals",
-                "content": "Focus on user authentication and database optimization",
-                "type": "notes",
-                "created_at": "2024-01-15T10:30:00",
-                "tags": ["sprint", "goals"]
+            "m1": {
+                "title": "Service Review",
+                "created_at": "2024-01-15T10:05:00",
+                "notes_plain": "",
+                "notes_markdown": "",
+                "notes": {
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": []
+                        }
+                    ]
+                }
+            },
+            "m2": {
+                "title": "Retro",
+                "created_at": "2024-01-16T11:05:00",
+                "notes_plain": "Direct notes",
+                "notes_markdown": "",
+                "notes": {
+                    "type": "doc",
+                    "content": []
+                }
             }
         },
-        "transcripts": {
-            "meeting_1": {
-                "content": "Alice: Good morning everyone. Let's start with yesterday's progress. Bob: I completed the user login feature. Charlie: I'm working on the database queries.",
-                "speakers": ["Alice", "Bob", "Charlie"],
-                "language": "en",
-                "confidence": 0.95
+        "documentPanels": {
+            "m1": {
+                "panel-1": {
+                    "content": [
+                        {
+                            "type": "heading",
+                            "content": [
+                                {"type": "text", "text": "Service Review"}
+                            ]
+                        },
+                        {
+                            "type": "paragraph",
+                            "content": [
+                                {"type": "text", "text": "Hello Panel"}
+                            ]
+                        }
+                    ]
+                }
             }
-        }
+        },
+        "transcripts": {}
     }
-    
-    # Create temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        json.dump(test_data, f, indent=2)
-        return f.name
+
+    cache_wrapper = {"cache": json.dumps({"state": state})}
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as handle:
+        json.dump(cache_wrapper, handle)
+        return handle.name
 
 
 async def test_server():
-    """Test the server functionality."""
-    print("Creating test cache...")
-    cache_path = await create_test_cache()
-    
+    """Test the server functionality with panel and plain notes."""
+    print("Creating synthetic test cache...")
+    cache_path = await create_test_cache_with_panels()
+
     try:
         print(f"Initializing server with cache: {cache_path}")
         server = GranolaMCPServer(cache_path=cache_path)
-        
+
         print("Loading cache...")
         await server._load_cache()
-        
-        print(f"Loaded {len(server.cache_data.meetings)} meetings")
-        print(f"Loaded {len(server.cache_data.documents)} documents")
-        print(f"Loaded {len(server.cache_data.transcripts)} transcripts")
-        
-        # Test search functionality
-        print("\nTesting search...")
-        results = await server._search_meetings("standup", 5)
-        print("Search results:", results[0].text)
-        
-        # Test meeting details
-        print("\nTesting meeting details...")
-        details = await server._get_meeting_details("meeting_1")
-        print("Meeting details:", details[0].text)
-        
-        # Test transcript
-        print("\nTesting transcript...")
-        transcript = await server._get_meeting_transcript("meeting_1")
-        print("Transcript:", transcript[0].text[:200] + "...")
-        
-        # Test pattern analysis
-        print("\nTesting pattern analysis...")
-        patterns = await server._analyze_meeting_patterns("participants")
-        print("Participant patterns:", patterns[0].text)
-        
-        print("\n✅ All tests passed!")
-        
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
+
+        assert server.cache_data, "Cache data should not be empty"
+        assert "m1" in server.cache_data.documents, "Document m1 should be parsed"
+        assert "m2" in server.cache_data.documents, "Document m2 should be parsed"
+
+        m1_content = server.cache_data.documents["m1"].content
+        m2_content = server.cache_data.documents["m2"].content
+
+        assert "Hello Panel" in m1_content, "Panel text should be extracted for m1"
+        assert "Direct notes" in m2_content, "notes_plain should take precedence for m2"
+
+        print("Synthetic content checks passed.")
+
+        # Minimal smoke for existing flows
+        await server._search_meetings("Service", 5)
+        await server._get_meeting_documents("m1")
+
+        print("\n✅ Panel fallback test passed!")
+
+    except Exception as exc:
+        print(f"❌ Test failed: {exc}")
         import traceback
         traceback.print_exc()
-    
+        raise
+
     finally:
-        # Clean up
         Path(cache_path).unlink()
 
 
