@@ -9,6 +9,9 @@
   "devDependencies": {
     "semantic-release": "^25.0.2"
   },
+  "overrides": {
+    "glob": ">=11.1.0"
+  },
   "release": {
     "branches": [
       "main"
