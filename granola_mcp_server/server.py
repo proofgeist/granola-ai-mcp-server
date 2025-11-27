@@ -265,9 +265,14 @@ class GranolaMCPServer:
                         # Handle Granola's ISO format
                         if created_at.endswith('Z'):
                             created_at = created_at[:-1] + '+00:00'
-                        meeting_date = datetime.fromisoformat(created_at)
+                        naive_date = datetime.fromisoformat(created_at)
+                        # Ensure timezone-aware datetime (assume UTC if naive)
+                        if naive_date.tzinfo is None:
+                            meeting_date = naive_date.replace(tzinfo=zoneinfo.ZoneInfo('UTC'))
+                        else:
+                            meeting_date = naive_date
                     else:
-                        meeting_date = datetime.now()
+                        meeting_date = datetime.now(zoneinfo.ZoneInfo('UTC'))
                     
                     metadata = MeetingMetadata(
                         id=meeting_id,
@@ -392,7 +397,7 @@ class GranolaMCPServer:
                 except Exception as e:
                     print(f"Error extracting document content for {doc_id}: {e}")
         
-        cache_data.last_updated = datetime.now()
+        cache_data.last_updated = datetime.now(zoneinfo.ZoneInfo('UTC'))
         return cache_data
     
     def _extract_structured_notes(self, notes_data: Dict[str, Any]) -> str:
@@ -605,8 +610,24 @@ class GranolaMCPServer:
         
         # Filter by date range if provided
         if date_range:
-            start_date = datetime.fromisoformat(date_range.get("start_date", "1900-01-01"))
-            end_date = datetime.fromisoformat(date_range.get("end_date", "2100-01-01"))
+            start_date_str = date_range.get("start_date", "1900-01-01")
+            end_date_str = date_range.get("end_date", "2100-01-01")
+            
+            # Parse dates and ensure timezone-aware
+            naive_start = datetime.fromisoformat(start_date_str)
+            naive_end = datetime.fromisoformat(end_date_str)
+            
+            # Localize naive datetimes to UTC
+            if naive_start.tzinfo is None:
+                start_date = naive_start.replace(tzinfo=zoneinfo.ZoneInfo('UTC'))
+            else:
+                start_date = naive_start
+                
+            if naive_end.tzinfo is None:
+                end_date = naive_end.replace(tzinfo=zoneinfo.ZoneInfo('UTC'))
+            else:
+                end_date = naive_end
+                
             meetings = [m for m in meetings if start_date <= m.date <= end_date]
         
         if pattern_type == "participants":
