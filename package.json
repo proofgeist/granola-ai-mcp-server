@@ -4,10 +4,10 @@
   "description": "MCP server for Granola.ai meeting intelligence",
   "private": true,
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.10.0"
   },
   "devDependencies": {
-    "semantic-release": "^24.0.0"
+    "semantic-release": "^25.0.2"
   },
   "release": {
     "branches": [
