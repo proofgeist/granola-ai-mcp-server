@@ -744,5 +744,14 @@ class GranolaMCPServer:
 
 def main():
     """Main entry point for the server."""
-    server = GranolaMCPServer()
-    server.run()
+    import sys
+    print("Starting Granola MCP Server...", file=sys.stderr)
+    try:
+        server = GranolaMCPServer()
+        print(f"Initialized server, cache path: {server.cache_path}", file=sys.stderr)
+        server.run()
+    except Exception as e:
+        print(f"Error starting server: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        raise
