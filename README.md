@@ -18,15 +18,25 @@ An experimental Model Context Protocol (MCP) server for integrating Granola.ai m
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
 - macOS with Granola.ai installed
-- Claude Desktop application
 - Granola cache file at `~/Library/Application Support/Granola/cache-v3.json`
 
-### Installation
+### One-Click Install for Cursor (Recommended)
+
+[![Add Granola MCP to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en-US/install-mcp?name=granola&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLWZyb20iLCJnaXQraHR0cHM6Ly9naXRodWIuY29tL3Byb29mZ2Vpc3QvZ3Jhbm9sYS1haS1tY3Atc2VydmVyIiwiZ3Jhbm9sYS1tY3Atc2VydmVyIl0sImVudiI6e319)
+
+Click the button above to automatically add the Granola MCP server to Cursor.
+
+> **Note:** This requires [uv](https://docs.astral.sh/uv/) to be installed and Granola.ai to be running on macOS.
+
+### Manual Installation (Claude Desktop)
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
 
 1. **Clone the repository to your home directory:**
    ```bash
    cd ~
-   git clone <repository-url>
+   git clone https://github.com/proofgeist/granola-ai-mcp-server
    cd granola-ai-mcp-server
    ```
    
@@ -67,6 +77,8 @@ An experimental Model Context Protocol (MCP) server for integrating Granola.ai m
    # Reopen Claude
    open -a "Claude"
    ```
+
+</details>
 
 ## Available Tools
 
