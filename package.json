@@ -16,6 +16,9 @@
     "branches": [
       "main"
     ]
-  }
+  },
+  "scripts": {
+    "smoke": "bash scripts/smoke.sh"
+  },
+  "packageManager": "npm@11.10.0"
 }
-

@@ -1,0 +1,9 @@
+[tools]
+python = "3.14"
+node = "24.13.1"
+
+[tasks.install]
+run = "uv sync && npm ci"
+
+[tasks.smoke]
+run = "bash scripts/smoke.sh"
