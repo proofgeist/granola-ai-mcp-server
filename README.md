@@ -253,9 +253,9 @@ Once configured, restart Claude Desktop and start interacting with your Granola 
 
 ### Transcript Access
 
-- *"Get the transcript from yesterday's ProofChat meeting"*
+- *"Get the transcript from yesterday's IA meeting"*
 - *"What was discussed in the Float rollback planning meeting?"*
-- *"Show me the full conversation from the David Tibbi meeting"*
+- *"Show me the full conversation from the David Tanner meeting"*
 
 ### Content Analysis
 
